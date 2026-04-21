@@ -47,5 +47,4 @@ If running without Docker, set these in your shell:
 - `USE_MOCK_EMAIL`: `true` or `false`.
 - `SMTP_USER` / `SMTP_PASS`: Your Gmail/SMTP credentials.
 
-## License
-MIT License
+
