@@ -1,0 +1,100 @@
+services:
+  mongo:
+    image: mongo:7.0
+    container_name: smartattend_mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: your_mongo_user
+      MONGO_INITDB_ROOT_PASSWORD: your_mongo_password
+      MONGO_INITDB_DATABASE: smartattend_db
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - smartattend_net
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  ai_service:
+    build:
+      context: ./ai_service
+      dockerfile: Dockerfile
+    container_name: smartattend_ai
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      - MODEL_DIR=/app/saved_models
+      - LOG_LEVEL=info
+    volumes:
+      - ai_models:/app/saved_models
+    networks:
+      - smartattend_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 120s   # model training takes ~60-90s first time
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: smartattend_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - MONGO_URL=mongodb://your_mongo_user:your_mongo_password@mongo:27017/smartattend_db?authSource=admin
+      - MONGO_DB_NAME=smartattend_db
+      - SECRET_KEY=your_super_secret_jwt_key
+      - ALGORITHM=HS256
+      - ACCESS_TOKEN_EXPIRE_MINUTES=10080
+      - AI_SERVICE_URL=http://ai_service:8001
+      - SMTP_SERVER=smtp.gmail.com
+      - SMTP_PORT=587
+      - SMTP_USER=your_email@gmail.com
+      - SMTP_PASS=your_app_password
+      - USE_MOCK_EMAIL=true
+      - FRONTEND_URL=http://localhost:80
+    networks:
+      - smartattend_net
+    depends_on:
+      mongo:
+        condition: service_healthy
+      ai_service:
+        condition: service_started   # don't wait for AI health — backend has fallback
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: smartattend_frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    networks:
+      - smartattend_net
+    depends_on:
+      backend:
+        condition: service_started
+
+volumes:
+  mongo_data:
+  ai_models:
+
+networks:
+  smartattend_net:
+    driver: bridge
